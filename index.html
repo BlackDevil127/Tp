@@ -37,6 +37,7 @@
             const [billNo, setBillNo] = useState(() => parseInt(localStorage.getItem('fl_bill_no')) || 1);
             const [view, setView] = useState('billing');
             const [cart, setCart] = useState([]);
+            const [isInvUnlocked, setIsInvUnlocked] = useState(false); // New state for locking
             const [customer, setCustomer] = useState({ 
                 name: '', phone: '', address: '', date: new Date().toISOString().split('T')[0] 
             });
@@ -46,6 +47,21 @@
                 localStorage.setItem('fl_sales', JSON.stringify(sales));
                 localStorage.setItem('fl_bill_no', billNo.toString());
             }, [inventory, sales, billNo]);
+
+            // New function to handle secure access
+            const handleInventoryAccess = () => {
+                if (isInvUnlocked) {
+                    setView('inventory');
+                } else {
+                    const pass = prompt("Enter Inventory Security Password:");
+                    if (pass === "Fancy0308") {
+                        setIsInvUnlocked(true);
+                        setView('inventory');
+                    } else {
+                        alert("Access Denied: Incorrect Password!");
+                    }
+                }
+            };
 
             const stats = useMemo(() => {
                 const today = new Date().toLocaleDateString();
@@ -128,7 +144,8 @@
                         </div>
                         <nav className="space-y-2">
                             <NavItem active={view==='billing'} icon="fa-receipt" label="Smart Billing" onClick={()=>setView('billing')} />
-                            <NavItem active={view==='inventory'} icon="fa-boxes-stacked" label="Stock Manager" onClick={()=>setView('inventory')} />
+                            {/* Updated onClick for inventory */}
+                            <NavItem active={view==='inventory'} icon="fa-boxes-stacked" label="Stock Manager" onClick={handleInventoryAccess} />
                             <NavItem active={view==='all-bills'} icon="fa-file-invoice" label="All Bill List" onClick={()=>setView('all-bills')} />
                             <NavItem active={view==='reports'} icon="fa-chart-line" label="Reports & Profit" onClick={()=>setView('reports')} />
                             <NavItem active={view==='history'} icon="fa-history" label="Sales History" onClick={()=>setView('history')} />
@@ -254,8 +271,7 @@
                             </div>
                         )}
 
-                        {/* OTHER VIEWS UNCHANGED */}
-                        {view === 'inventory' && (
+                        {view === 'inventory' && isInvUnlocked && (
                             <div className="space-y-8">
                                 <div className="max-w-4xl glass-card p-4 md:p-8 mx-auto">
                                     <h3 className="font-bold text-lg mb-6 text-indigo-600">Add New Product</h3>
