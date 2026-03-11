@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fancy Looks Salon | AI-Enterprise ERP v5.5</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f4f7fe; color: #1e293b; }
+        .sidebar { background: #0f172a; width: 280px; position: fixed; height: 100vh; transition: all 0.3s; z-index: 100; }
+        .main-content { margin-left: 280px; padding: 30px; transition: all 0.3s; }
+        @media (max-width: 1024px) {
+            .sidebar { width: 80px; padding: 15px 10px; }
+            .sidebar h1, .sidebar span { display: none; }
+            .main-content { margin-left: 80px; padding: 15px; }
+        }
+        .glass-card { background: white; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .ai-gradient { background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const App = () => {
+            const [inventory, setInventory] = useState(() => JSON.parse(localStorage.getItem('fl_inv')) || []);
+            const [sales, setSales] = useState(() => JSON.parse(localStorage.getItem('fl_sales')) || []);
+            const [billNo, setBillNo] = useState(() => parseInt(localStorage.getItem('fl_bill_no')) || 1);
+            const [view, setView] = useState('billing');
+            const [cart, setCart] = useState([]);
+            const [customer, setCustomer] = useState({ 
+                name: '', phone: '', address: '', date: new Date().toISOString().split('T')[0] 
+            });
+
+            useEffect(() => {
+                localStorage.setItem('fl_inv', JSON.stringify(inventory));
+                localStorage.setItem('fl_sales', JSON.stringify(sales));
+                localStorage.setItem('fl_bill_no', billNo.toString());
+            }, [inventory, sales, billNo]);
+
+            const stats = useMemo(() => {
+                const today = new Date().toLocaleDateString();
+                const thisMonth = new Date().getMonth();
+                const dailySales = sales.filter(s => new Date(s.date).toLocaleDateString() === today);
+                const monthlySales = sales.filter(s => new Date(s.date).getMonth() === thisMonth);
+
+                const calcProfit = (salesList) => {
+                    return salesList.reduce((acc, sale) => {
+                        const saleProfit = sale.items.reduce((p, item) => {
+                            const margin = item.price - (item.purchasePrice || 0);
+                            return p + (margin * item.sellQty);
+                        }, 0);
+                        return acc + saleProfit;
+                    }, 0);
+                };
+
+                return {
+                    dailyRevenue: dailySales.reduce((sum, s) => sum + s.total, 0),
+                    monthlyRevenue: monthlySales.reduce((sum, s) => sum + s.total, 0),
+                    dailyProfit: calcProfit(dailySales),
+                    monthlyProfit: calcProfit(monthlySales)
+                };
+            }, [sales]);
+
+            const addToCart = (product) => {
+                const qtyInput = prompt(`Enter Quantity for ${product.name}:`, "1");
+                const qty = parseInt(qtyInput);
+                if (!qty || qty <= 0 || qty > product.qty) return alert("Invalid Qty or No Stock!");
+                setCart([...cart, { ...product, sellQty: qty, subtotal: product.price * qty }]);
+            };
+
+            const finalizeBill = (method) => {
+                if (!customer.name || cart.length === 0) return alert("Fill details!");
+                const total = cart.reduce((s, i) => s + i.subtotal, 0);
+                const newSale = { 
+                    billNo, customer: {...customer}, total, method, 
+                    date: customer.date, items: [...cart] 
+                };
+                const updatedInv = inventory.map(invItem => {
+                    const sold = cart.find(c => c.id === invItem.id);
+                    return sold ? { ...invItem, qty: invItem.qty - sold.sellQty } : invItem;
+                });
+                setInventory(updatedInv);
+                setSales([newSale, ...sales]);
+                setBillNo(prev => prev + 1);
+                setCart([]);
+                setCustomer({ name: '', phone: '', address: '', date: new Date().toISOString().split('T')[0] });
+                alert("Sale Completed Successfully!");
+            };
+
+            const deleteSale = (bNo) => {
+                if(confirm(`Delete Bill #${bNo}? (Stock will not be reversed)`)) {
+                    setSales(sales.filter(s => s.billNo !== bNo));
+                }
+            };
+
+            const clearAllReports = () => {
+                if(confirm("DANGER: Are you sure you want to delete ALL sales records and reports? This cannot be undone.")) {
+                    setSales([]);
+                    setBillNo(1);
+                    alert("All reports have been cleared.");
+                }
+            };
+
+            const renewStock = (id) => {
+                const addedQty = prompt("Enter additional quantity to add:");
+                if(!addedQty || isNaN(addedQty)) return;
+                setInventory(inventory.map(item => 
+                    item.id === id ? { ...item, qty: item.qty + parseInt(addedQty) } : item
+                ));
+            };
+
+            return (
+                <div className="flex">
+                    <aside className="sidebar text-slate-300 p-4 lg:p-6 shadow-2xl">
+                        <div className="mb-10 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl ai-gradient flex items-center justify-center text-white"><i className="fas fa-scissors"></i></div>
+                            <h1 className="text-xl font-bold text-white whitespace-nowrap">Fancy Looks</h1>
+                        </div>
+                        <nav className="space-y-2">
+                            <NavItem active={view==='billing'} icon="fa-receipt" label="Smart Billing" onClick={()=>setView('billing')} />
+                            <NavItem active={view==='inventory'} icon="fa-boxes-stacked" label="Stock Manager" onClick={()=>setView('inventory')} />
+                            <NavItem active={view==='all-bills'} icon="fa-file-invoice" label="All Bill List" onClick={()=>setView('all-bills')} />
+                            <NavItem active={view==='reports'} icon="fa-chart-line" label="Reports & Profit" onClick={()=>setView('reports')} />
+                            <NavItem active={view==='history'} icon="fa-history" label="Sales History" onClick={()=>setView('history')} />
+                        </nav>
+                    </aside>
+
+                    <main className="main-content w-full overflow-x-hidden">
+                        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                            <h2 className="text-xl md:text-2xl font-bold capitalize">{view.replace('-', ' ')}</h2>
+                            <div className="ai-gradient px-4 py-2 rounded-lg text-white text-xs md:text-sm font-bold shadow-lg"><i className="fas fa-robot mr-2"></i> AI Brain Active</div>
+                        </header>
+
+                        {view === 'billing' && (
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                                <div className="lg:col-span-8 space-y-6">
+                                    <div className="glass-card p-4 md:p-6">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h3 className="font-bold text-sm md:text-base text-indigo-600">Customer Entry</h3>
+                                            <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold">Auto Bill No: #{billNo}</span>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <input className="p-3 border rounded-xl text-sm" placeholder="Name" value={customer.name} onChange={e=>setCustomer({...customer, name:e.target.value})} />
+                                            <input className="p-3 border rounded-xl text-sm" placeholder="Phone" value={customer.phone} onChange={e=>setCustomer({...customer, phone:e.target.value})} />
+                                            <input className="p-3 border rounded-xl text-sm" placeholder="Address" value={customer.address} onChange={e=>setCustomer({...customer, address:e.target.value})} />
+                                            <input className="p-3 border rounded-xl text-sm" type="date" value={customer.date} onChange={e=>setCustomer({...customer, date:e.target.value})} />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                                        {inventory.map(item => (
+                                            <div key={item.id} onClick={()=>addToCart(item)} className="glass-card p-4 cursor-pointer hover:border-indigo-500 transition-all active:scale-95">
+                                                <p className="font-bold text-sm">{item.name}</p>
+                                                <p className="text-[10px] text-slate-400">{item.size}</p>
+                                                <div className="flex justify-between mt-4 items-end">
+                                                    <span className="text-indigo-600 font-bold">₹{item.price}</span>
+                                                    <span className={`text-[10px] font-bold px-2 py-1 rounded ${item.qty < 5 ? 'bg-red-100 text-red-600' : 'bg-slate-100'}`}>Stock: {item.qty}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="lg:col-span-4">
+                                    <div className="glass-card p-4 md:p-6 sticky top-8 border-t-4 border-indigo-600 shadow-xl">
+                                        <h3 className="font-bold mb-4 text-center">Summary</h3>
+                                        <div className="min-h-[150px] divide-y text-sm overflow-y-auto max-h-[30vh]">
+                                            {cart.map((c, i) => (
+                                                <div key={i} className="py-2 flex justify-between">
+                                                    <span>{c.name} x{c.sellQty}</span>
+                                                    <span className="font-bold">₹{c.subtotal}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="pt-4 border-t flex justify-between font-bold text-xl mb-6">
+                                            <span>Total</span>
+                                            <span className="text-indigo-600">₹{cart.reduce((s,i)=>s+i.subtotal, 0)}</span>
+                                        </div>
+                                        <button onClick={()=>finalizeBill('Cash')} className="w-full py-4 ai-gradient text-white rounded-xl font-bold shadow-lg transition">COMPLETE SALE</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'all-bills' && (
+                            <div className="glass-card overflow-hidden">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left min-w-[700px]">
+                                        <thead className="bg-slate-800 text-white text-xs uppercase">
+                                            <tr>
+                                                <th className="p-4">Bill No</th>
+                                                <th className="p-4">Customer Details</th>
+                                                <th className="p-4">Items Sold</th>
+                                                <th className="p-4">Total Amount</th>
+                                                <th className="p-4">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y text-sm">
+                                            {sales.length === 0 ? <tr><td colSpan="5" className="p-10 text-center text-slate-400">No bills found.</td></tr> : 
+                                            sales.map(s => (
+                                                <tr key={s.billNo} className="hover:bg-slate-50">
+                                                    <td className="p-4 font-bold text-indigo-600">#{s.billNo}</td>
+                                                    <td className="p-4">
+                                                        <div className="font-bold">{s.customer.name}</div>
+                                                        <div className="text-[10px] text-slate-500">{s.customer.phone}</div>
+                                                        <div className="text-[10px] text-slate-400">{s.date}</div>
+                                                    </td>
+                                                    <td className="p-4">
+                                                        <div className="text-[10px] space-y-1">
+                                                            {s.items.map((it, idx) => (
+                                                                <div key={idx}>{it.name} ({it.sellQty})</div>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-4 font-bold text-emerald-600 text-lg">₹{s.total}</td>
+                                                    <td className="p-4 text-center">
+                                                        <button onClick={()=>deleteSale(s.billNo)} className="bg-red-50 text-red-500 p-2 rounded-lg hover:bg-red-500 hover:text-white transition">
+                                                            <i className="fas fa-trash-alt"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'reports' && (
+                            <div className="space-y-8">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                                    <StatCard label="Today Sales" value={`₹${stats.dailyRevenue}`} icon="fa-cash-register" color="text-blue-600" />
+                                    <StatCard label="Today Profit" value={`₹${stats.dailyProfit.toFixed(0)}`} icon="fa-chart-pie" color="text-emerald-600" />
+                                    <StatCard label="Monthly Sales" value={`₹${stats.monthlyRevenue}`} icon="fa-calendar-check" color="text-indigo-600" />
+                                    <StatCard label="Monthly Profit" value={`₹${stats.monthlyProfit.toFixed(0)}`} icon="fa-coins" color="text-purple-600" />
+                                </div>
+                                <div className="glass-card p-6 flex flex-col md:flex-row justify-between items-center bg-white border-red-100 border-2">
+                                    <div>
+                                        <h3 className="font-bold text-red-600"><i className="fas fa-exclamation-triangle mr-2"></i>Data Management</h3>
+                                        <p className="text-sm text-slate-500">Clearing reports will reset sales history and bill numbering.</p>
+                                    </div>
+                                    <button onClick={clearAllReports} className="mt-4 md:mt-0 px-6 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition">
+                                        DELETE ALL REPORTS
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* OTHER VIEWS UNCHANGED */}
+                        {view === 'inventory' && (
+                            <div className="space-y-8">
+                                <div className="max-w-4xl glass-card p-4 md:p-8 mx-auto">
+                                    <h3 className="font-bold text-lg mb-6 text-indigo-600">Add New Product</h3>
+                                    <form onSubmit={(e)=>{
+                                        e.preventDefault();
+                                        const newItem = { id: Date.now(), name: e.target.name.value, size: e.target.size.value, qty: parseInt(e.target.qty.value), purchasePrice: parseFloat(e.target.purchasePrice.value), price: parseFloat(e.target.salePrice.value) };
+                                        setInventory([...inventory, newItem]);
+                                        e.target.reset();
+                                    }} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <input name="name" required className="p-3 border rounded-xl text-sm" placeholder="Product Name" />
+                                        <input name="size" required className="p-3 border rounded-xl text-sm" placeholder="Size/Variant" />
+                                        <input name="qty" required type="number" className="p-3 border rounded-xl text-sm" placeholder="Opening Quantity" />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input name="purchasePrice" required type="number" className="p-3 border rounded-xl text-sm bg-red-50" placeholder="Purchase ₹" />
+                                            <input name="salePrice" required type="number" className="p-3 border rounded-xl text-sm bg-emerald-50" placeholder="Sale ₹" />
+                                        </div>
+                                        <button className="sm:col-span-2 py-3 bg-slate-900 text-white rounded-xl font-bold transition">SAVE NEW STOCK</button>
+                                    </form>
+                                </div>
+                                <div className="glass-card overflow-x-auto">
+                                    <table className="w-full text-left min-w-[600px]">
+                                        <thead className="bg-slate-50 border-b text-xs font-bold text-slate-500 uppercase">
+                                            <tr><th className="p-4">Item</th><th className="p-4">Qty</th><th className="p-4">Buy/Sell</th><th className="p-4">Action</th></tr>
+                                        </thead>
+                                        <tbody className="divide-y text-sm">
+                                            {inventory.map(item => (
+                                                <tr key={item.id} className="hover:bg-slate-50">
+                                                    <td className="p-4 font-bold">{item.name} ({item.size})</td>
+                                                    <td className="p-4 font-bold text-indigo-600">{item.qty}</td>
+                                                    <td className="p-4"><span className="text-red-500">₹{item.purchasePrice}</span> / <span className="text-emerald-600">₹{item.price}</span></td>
+                                                    <td className="p-4 flex gap-3">
+                                                        <button onClick={()=>renewStock(item.id)} className="text-blue-600 font-bold"><i className="fas fa-sync-alt"></i> Renew</button>
+                                                        <button onClick={()=>{if(confirm('Delete?')) setInventory(inventory.filter(i=>i.id!==item.id))}} className="text-red-500"><i className="fas fa-trash"></i></button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {view === 'history' && (
+                             <div className="glass-card overflow-x-auto">
+                                <table className="w-full text-left min-w-[600px]">
+                                    <thead className="bg-slate-800 text-white text-xs uppercase">
+                                        <tr><th className="p-4">Bill #</th><th className="p-4">Customer</th><th className="p-4">Amount</th><th className="p-4">Date</th></tr>
+                                    </thead>
+                                    <tbody className="divide-y text-sm">
+                                        {sales.map(s => (
+                                            <tr key={s.billNo} className="hover:bg-slate-50">
+                                                <td className="p-4 font-bold text-blue-600">#{s.billNo}</td>
+                                                <td className="p-4">
+                                                    <b>{s.customer.name}</b><br/>
+                                                    <span className="text-[10px] text-slate-500">{s.customer.phone}</span>
+                                                </td>
+                                                <td className="p-4 font-bold text-emerald-600">₹{s.total}</td>
+                                                <td className="p-4 text-xs text-slate-400">{s.date}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        };
+
+        const NavItem = ({ active, icon, label, onClick }) => (
+            <button onClick={onClick} className={`w-full flex items-center gap-4 p-3 rounded-xl transition ${active ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}>
+                <i className={`fas ${icon} w-5 shrink-0`}></i> <span className="text-sm font-medium">{label}</span>
+            </button>
+        );
+
+        const StatCard = ({ label, value, icon, color }) => (
+            <div className="glass-card p-4 md:p-6">
+                <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center shrink-0 ${color}`}><i className={`fas ${icon} text-xl`}></i></div>
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+                        <h4 className="text-xl font-black">{value}</h4>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
